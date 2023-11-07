@@ -1,0 +1,17 @@
+{
+  "name": "discord2discourse",
+  "module": "index.ts",
+  "devDependencies": {
+    "bun-types": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "type": "module",
+  "dependencies": {
+    "@discordjs/core": "^1.0.1",
+    "@prisma/client": "5.5.2",
+    "marked": "^9.1.4",
+    "prisma": "^5.5.2"
+  }
+}
