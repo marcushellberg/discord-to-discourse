@@ -20,6 +20,9 @@ class ImportScripts::Discord < ImportScripts::Base
       username: "discord",
       password: "discord",
       database: "discord",
+      encoding: "utf8mb4",
+      collation: "utf8mb4_unicode_ci"
+      
     )
   end
 
