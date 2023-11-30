@@ -22,7 +22,6 @@ class ImportScripts::Discord < ImportScripts::Base
       database: "discord",
       encoding: "utf8mb4",
       collation: "utf8mb4_unicode_ci"
-      
     )
   end
 
@@ -75,6 +74,10 @@ class ImportScripts::Discord < ImportScripts::Base
     end
   end
 
+
+  # Table Categories stores the name
+  # Table CategoryCustomField stores the key from the imported DB from discord
+  #
   def import_categories
     puts "", "Importing categories"
 
@@ -94,6 +97,8 @@ class ImportScripts::Discord < ImportScripts::Base
     puts "", "Importing discussions"
     numTopics = 0
     numPosts = 0
+    skipped = 0
+    topicWithoutPost = 0
 
     batches(BATCH_SIZE) do |offset|
       topics = mysql_query(
@@ -114,42 +119,52 @@ class ImportScripts::Discord < ImportScripts::Base
         posts = get_posts(dbTopic["id"])
 
         first_post = posts[0]
+        if !first_post
+          puts "Topic without Posts: #{dbTopic["id"]}, #{dbTopic["title"]}"
+          topicWithoutPost +=1
+        end
         next unless first_post
+        if @lookup.post_already_imported?(first_post["id"])
+          skipped += 1
+        else
+          attachments = get_attachments(first_post["id"])
+          user_id = user_id_from_imported_user_id(first_post["authorId"])
 
-        attachments = get_attachments(first_post["id"])
-        user_id = user_id_from_imported_user_id(first_post["authorId"])
-
-        topic = {
-          id: first_post["id"],
-          user_id: user_id,
-          raw: process_post_content(first_post["body"], attachments, user_id),
-          created_at: Time.zone.at(first_post["created"]),
-          title: dbTopic["title"],
-          category: category_id_from_imported_category_id(dbTopic["categoryId"])
-        }
-
-        parent_post = create_post(topic, topic[:id])
-        numTopics += 1
-
-        posts[1..-1].each do |post|
-          author_id = user_id_from_imported_user_id(post["authorId"])
-          attachments = get_attachments(post["id"])
-          create_post(
+          parent_post = create_post(
             {
-              id: post["id"],
-              topic_id: parent_post.topic_id,
-              user_id: author_id,
-              raw: process_post_content(post["body"], attachments, author_id),
-              created_at: Time.zone.at(post["created"]),
-            },
-            post["id"]
-          )
-          numPosts += 1
+              id: first_post["id"],
+              topic_id: first_post["topicId"],
+              user_id: user_id,
+              raw: process_post_content(first_post["body"], attachments, user_id),
+              title: dbTopic["title"],
+              created_at: Time.zone.at(first_post["created"]),
+              category: category_id_from_imported_category_id(dbTopic["categoryId"])
+            }, first_post["id"])
+          numTopics += 1
+
+          posts[1..-1].each do |post|
+            author_id = user_id_from_imported_user_id(post["authorId"])
+            attachments = get_attachments(post["id"])
+            create_post(
+              {
+                id: post["id"],
+                topic_id: parent_post.topic_id,
+                user_id: author_id,
+                raw: process_post_content(post["body"], attachments, author_id),
+                created_at: Time.zone.at(post["created"]),
+              },
+              post["id"]
+            )
+            numPosts += 1
+          end
         end
       end
     end
 
     puts "", "Imported #{numTopics} topics with #{numTopics + numPosts} posts."
+    puts "", "Skipped #{skipped} topics."
+    puts "", "Topic without posts not imported #{topicWithoutPost}."
+
   end
 
   def get_posts(topic_id)
@@ -207,7 +222,7 @@ class ImportScripts::Discord < ImportScripts::Base
         max_file_size: SiteSetting.max_image_size_kb.kilobytes,
         tmp_file_name: "tmp-attachment",
         follow_redirect: true,
-      )
+        )
 
     return unless tempfile
 
